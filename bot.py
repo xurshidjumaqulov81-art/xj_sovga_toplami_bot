@@ -33,9 +33,7 @@ class Register(StatesGroup):
 
 
 start_keyboard = ReplyKeyboardMarkup(
-    keyboard=[
-        [KeyboardButton(text="▶️ СТАРТ")]
-    ],
+    keyboard=[[KeyboardButton(text="▶️ СТАРТ")]],
     resize_keyboard=True
 )
 
@@ -53,18 +51,7 @@ qual_keyboard = ReplyKeyboardMarkup(
 
 
 understand_keyboard = ReplyKeyboardMarkup(
-    keyboard=[
-        [KeyboardButton(text="✅ ТУШУНАРЛИ")]
-    ],
-    resize_keyboard=True
-)
-
-
-admin_keyboard = ReplyKeyboardMarkup(
-    keyboard=[
-        [KeyboardButton(text="📊 Статистика")],
-        [KeyboardButton(text="➕ Совға қўшиш")]
-    ],
+    keyboard=[[KeyboardButton(text="✅ ТУШУНАРЛИ")]],
     resize_keyboard=True
 )
 
@@ -131,10 +118,7 @@ async def get_full_name(message: Message, state: FSMContext):
     full_name = message.text.strip()
 
     if len(full_name.split()) < 2:
-        await message.answer(
-            "Илтимос, исм ва фамилиянгизни тўлиқ киритинг.\n\n"
-            "Намуна: Абдуллаев Жасур"
-        )
+        await message.answer("Исм ва фамилиянгизни тўлиқ киритинг.\n\nНамуна: Абдуллаев Жасур")
         return
 
     await state.update_data(full_name=full_name)
@@ -152,29 +136,21 @@ async def get_xj_id(message: Message, state: FSMContext):
     xj_id = message.text.strip()
 
     if not re.fullmatch(r"\d{7}", xj_id):
-        await message.answer(
-            "❌ ID рақам нотўғри киритилди.\n\n"
-            "ID 7 хонали рақам бўлиши керак.\n"
-            "Намуна: 0012345"
-        )
+        await message.answer("❌ ID нотўғри.\n\nНамуна: 0012345")
         return
 
     exists = await check_xj_id_exists(xj_id)
 
     if exists:
         await message.answer(
-            "❌ Ушбу ID рақам бўйича совға тўплами аллақачон расмийлаштирилган.\n\n"
-            "Бир ID рақам фақат бир марта иштирок этиши мумкин."
+            "❌ Ушбу ID рақам бўйича совға тўплами аллақачон расмийлаштирилган."
         )
         await state.clear()
         return
 
     await state.update_data(xj_id=xj_id)
 
-    await message.answer(
-        "Квалификациянгизни танланг:",
-        reply_markup=qual_keyboard
-    )
+    await message.answer("Квалификациянгизни танланг:", reply_markup=qual_keyboard)
     await state.set_state(Register.qualification)
 
 
@@ -233,10 +209,7 @@ async def get_phone(message: Message, state: FSMContext):
     phone = message.text.strip()
 
     if len(phone) < 9:
-        await message.answer(
-            "Телефон рақам нотўғри киритилди.\n\n"
-            "Намуна: +998901234567"
-        )
+        await message.answer("Телефон рақам нотўғри.\n\nНамуна: +998901234567")
         return
 
     await state.update_data(phone=phone)
@@ -258,8 +231,8 @@ async def get_address(message: Message, state: FSMContext):
 
     data = await state.get_data()
 
-    telegram_name = message.from_user.full_name
     username = message.from_user.username
+    telegram_name = message.from_user.full_name
 
     gift_number = await save_user(
         telegram_id=message.from_user.id,
@@ -273,10 +246,7 @@ async def get_address(message: Message, state: FSMContext):
     )
 
     if gift_number is None:
-        await message.answer(
-            "❌ Ҳозирча бепул совға тўпламлари қолмади.",
-            reply_markup=ReplyKeyboardRemove()
-        )
+        await message.answer("❌ Ҳозирча бепул совға тўпламлари қолмади.")
         await state.clear()
         return
 
@@ -307,31 +277,7 @@ async def get_address(message: Message, state: FSMContext):
 """
 
     await bot.send_message(ADMIN_ID, admin_text)
-
     await state.clear()
-
-
-@dp.message(Command("admin"))
-async def admin_panel(message: Message):
-    if message.from_user.id != ADMIN_ID:
-        return
-
-    await message.answer("🔐 Админ меню", reply_markup=admin_keyboard)
-
-
-@dp.message(F.text == "📊 Статистика")
-async def admin_stats_button(message: Message):
-    if message.from_user.id != ADMIN_ID:
-        return
-
-    total, distributed, left = await get_stats()
-
-    await message.answer(
-        f"📊 СТАТИСТИКА\n\n"
-        f"🎁 Жами совға тўпламлари: {total} та\n"
-        f"✅ Тарқатилган: {distributed} та\n"
-        f"📦 Қолган: {left} та"
-    )
 
 
 @dp.message(Command("stats"))
@@ -394,17 +340,6 @@ async def admin_set_gifts(message: Message):
         f"🎁 Жами: {total} та\n"
         f"✅ Тарқатилган: {distributed} та\n"
         f"📦 Қолган: {left} та"
-    )
-
-
-@dp.message(F.text == "➕ Совға қўшиш")
-async def add_gift_info(message: Message):
-    if message.from_user.id != ADMIN_ID:
-        return
-
-    await message.answer(
-        "Совға қўшиш учун шундай ёзинг:\n\n"
-        "/add 20"
     )
 
 
