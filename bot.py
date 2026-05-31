@@ -1,283 +1,292 @@
 import asyncio
-import re
-
 from aiogram import Bot, Dispatcher, F
-from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
+from aiogram.types import Message, ReplyKeyboardRemove
 from aiogram.filters import CommandStart, Command
-from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.context import FSMContext
-from aiogram.fsm.storage.memory import MemoryStorage
 
 from config import BOT_TOKEN, ADMIN_ID
+from states import Registration
+from keyboards import qualification_kb, confirm_kb
 from database import (
-    create_tables,
-    get_stats,
-    add_gifts,
-    set_gifts,
-    check_user_exists,
-    check_xj_id_exists,
-    save_user
+    check_user,
+    check_xj_id,
+    get_count,
+    get_limit,
+    set_limit,
+    add_limit,
+    add_user
 )
-
 
 bot = Bot(token=BOT_TOKEN)
-dp = Dispatcher(storage=MemoryStorage())
+dp = Dispatcher()
 
 
-class Register(StatesGroup):
-    full_name = State()
-    xj_id = State()
-    qualification = State()
-    phone = State()
-    address = State()
-
-
-start_keyboard = ReplyKeyboardMarkup(
-    keyboard=[[KeyboardButton(text="▶️ СТАРТ")]],
-    resize_keyboard=True
-)
-
-
-qual_keyboard = ReplyKeyboardMarkup(
-    keyboard=[
-        [KeyboardButton(text="ОДДИЙ ҲАМКОР")],
-        [KeyboardButton(text="ХЖ МАСТЕР")],
-        [KeyboardButton(text="ХЖ МЕНЕЖЕР")],
-        [KeyboardButton(text="ХЖ БРОНЗА")],
-        [KeyboardButton(text="ХЖ СИЛЬВЕР")]
-    ],
-    resize_keyboard=True
-)
-
-
-understand_keyboard = ReplyKeyboardMarkup(
-    keyboard=[[KeyboardButton(text="✅ ТУШУНАРЛИ")]],
-    resize_keyboard=True
-)
+def left_gifts():
+    return get_limit() - get_count()
 
 
 @dp.message(CommandStart())
-async def cmd_start(message: Message, state: FSMContext):
+async def start(message: Message, state: FSMContext):
+    tg_id = message.from_user.id
+
+    if check_user(tg_id):
+        await message.answer(
+            "⚠️ Сиз ушбу акцияда олдин иштирок этгансиз.\n\n"
+            "1 та Telegram аккаунт фақат 1 марта бепул совға тўпламини олиши мумкин."
+        )
+        return
+
+    if left_gifts() <= 0:
+        await message.answer(
+            "⛔ Афсуски, ҳозирча бепул совға тўпламлари тугади.\n\n"
+            "Янги лимит ажратилса, бот орқали рўйхатдан ўтиш қайта давом этади."
+        )
+        return
+
     await state.clear()
 
-    total, distributed, left = await get_stats()
-
-    text = f"""
-Ассалому алайкум!
-
-ХЖ компанияси ҳамкорлари учун махсус БЕПУЛ СОВҒА ТЎПЛАМИ дастурига хуш келибсиз.
-
-Бизнесингизни ривожлантириш ва тизимли ишлашни йўлга қўйишингиз учун ХЖ томонидан дастлабки ҳамкорларга қуйидаги совғалар тақдим этилади:
-
-📘 ХЖ блокнот
-📗 ХЖ ҳафталик кундалик
-🖊 ХЖ ручка
-📖 ХЖ маркетинг ва маҳсулотлар каталоги
-📚 Ишлаш учун қўлланмалар
-
-🎁 Қолган бепул совға тўпламлари: {left} та
-
-Рўйхатдан ўтиш учун қуйидаги тугмани босинг.
-"""
-
-    await message.answer(text, reply_markup=start_keyboard)
-
-
-@dp.message(F.text == "▶️ СТАРТ")
-async def start_register(message: Message, state: FSMContext):
-    exists = await check_user_exists(message.from_user.id)
-
-    if exists:
-        await message.answer(
-            "❌ Сиз ушбу бепул совға тўпламини аввал олгансиз.\n\n"
-            "Бир Telegram аккаунт орқали фақат бир марта иштирок этиш мумкин.",
-            reply_markup=ReplyKeyboardRemove()
-        )
-        return
-
-    total, distributed, left = await get_stats()
-
-    if left <= 0:
-        await message.answer(
-            "❌ Ҳозирча бепул совға тўпламлари қолмади.\n\n"
-            "Янги ўринлар очилганда қайта уриниб кўринг.",
-            reply_markup=ReplyKeyboardRemove()
-        )
-        return
-
     await message.answer(
-        "Илтимос, исм ва фамилиянгизни киритинг.\n\n"
-        "Намуна: Абдуллаев Жасур",
-        reply_markup=ReplyKeyboardRemove()
+        "👋 Ассалому алайкум!\n\n"
+        "🎁 XJ совға тўплами ботига хуш келибсиз.\n\n"
+        "XJ компанияси томонидан ҳамкорларнинг бизнесини тизимли "
+        "ривожлантириш ва режали ишлашини қўллаб-қувватлаш мақсадида "
+        "махсус совға тўплами тақдим этилмоқда.\n\n"
+        f"📊 Ҳозирда қолган совғалар сони: {left_gifts()} та\n\n"
+        "Илтимос, рўйхатдан ўтиш учун исм ва фамилиянгизни ёзинг.\n\n"
+        "📝 Намуна: Алиев Али"
     )
-    await state.set_state(Register.full_name)
+
+    await state.set_state(Registration.full_name)
 
 
-@dp.message(Register.full_name)
+@dp.message(Registration.full_name)
 async def get_full_name(message: Message, state: FSMContext):
     full_name = message.text.strip()
 
     if len(full_name.split()) < 2:
-        await message.answer("Исм ва фамилиянгизни тўлиқ киритинг.\n\nНамуна: Абдуллаев Жасур")
+        await message.answer(
+            "⚠️ Илтимос, исм ва фамилиянгизни тўлиқ ёзинг.\n\n"
+            "📝 Намуна: Алиев Али"
+        )
         return
 
     await state.update_data(full_name=full_name)
 
     await message.answer(
-        "ХЖ ID рақамингизни киритинг.\n\n"
-        "Намуна: 0012345\n\n"
-        "ID рақам 7 хонали бўлиши керак."
+        "🆔 XJ ID рақамингизни киритинг.\n\n"
+        "ID рақам 7 хонали бўлиши керак.\n\n"
+        "📝 Намуна: 0012345"
     )
-    await state.set_state(Register.xj_id)
+
+    await state.set_state(Registration.xj_id)
 
 
-@dp.message(Register.xj_id)
+@dp.message(Registration.xj_id)
 async def get_xj_id(message: Message, state: FSMContext):
     xj_id = message.text.strip()
 
-    if not re.fullmatch(r"\d{7}", xj_id):
-        await message.answer("❌ ID нотўғри.\n\nНамуна: 0012345")
+    if not xj_id.isdigit() or len(xj_id) != 7:
+        await message.answer(
+            "⚠️ ID рақам нотўғри киритилди.\n\n"
+            "Илтимос, 7 хонали ID рақам ёзинг.\n\n"
+            "📝 Намуна: 0012345"
+        )
         return
 
-    exists = await check_xj_id_exists(xj_id)
-
-    if exists:
+    if check_xj_id(xj_id):
         await message.answer(
-            "❌ Ушбу ID рақам бўйича совға тўплами аллақачон расмийлаштирилган."
+            "⚠️ Бу XJ ID рақам орқали совға тўплами олдин расмийлаштирилган.\n\n"
+            "1 та XJ ID фақат 1 марта иштирок этиши мумкин."
         )
         await state.clear()
         return
 
     await state.update_data(xj_id=xj_id)
 
-    await message.answer("Квалификациянгизни танланг:", reply_markup=qual_keyboard)
-    await state.set_state(Register.qualification)
+    await message.answer(
+        "⭐ Квалификациянгизни танланг:",
+        reply_markup=qualification_kb
+    )
+
+    await state.set_state(Registration.qualification)
 
 
-@dp.message(Register.qualification)
+@dp.message(Registration.qualification)
 async def get_qualification(message: Message, state: FSMContext):
-    qualification = message.text.strip()
-
-    allowed = [
+    qualifications = [
         "ОДДИЙ ҲАМКОР",
-        "ХЖ МАСТЕР",
-        "ХЖ МЕНЕЖЕР",
-        "ХЖ БРОНЗА",
-        "ХЖ СИЛЬВЕР"
+        "XJ MASTER",
+        "XJ MANAGER",
+        "XJ BRONZE",
+        "XJ SILVER"
     ]
 
-    if qualification not in allowed:
-        await message.answer("Илтимос, тугмалардан бирини танланг.", reply_markup=qual_keyboard)
+    if message.text not in qualifications:
+        await message.answer(
+            "⚠️ Илтимос, қуйидаги тугмалардан бирини танланг.",
+            reply_markup=qualification_kb
+        )
         return
 
-    await state.update_data(qualification=qualification)
-
-    text = """
-ХЖ компанияси билан тизимли ва режали ишлаб юқори натижаларга эришишингиз учун ушбу махсус совға тўплами сизга БЕПУЛ тақдим этилади.
-
-Совға тўплами таркиби:
-
-📘 ХЖ блокнот
-📗 ХЖ ҳафталик кундалик
-🖊 ХЖ ручка
-📖 ХЖ маркетинг ва маҳсулотлар каталоги
-📚 Ишлаш учун қўлланмалар
-
-Давом этиш учун қуйидаги тугмани босинг.
-"""
-
-    await message.answer(text, reply_markup=understand_keyboard)
-
-
-@dp.message(F.text == "✅ ТУШУНАРЛИ")
-async def understood(message: Message, state: FSMContext):
-    current_state = await state.get_state()
-
-    if current_state != Register.qualification.state:
-        return
+    await state.update_data(qualification=message.text)
 
     await message.answer(
-        "Жўнатма учун телефон рақамингизни киритинг.\n\n"
-        "Намуна: +998901234567",
+        "🎁 Табриклаймиз!\n\n"
+        "XJ компанияси билан тизимли ва режали ишлаб, юқори натижаларга "
+        "эришишингиз учун ушбу махсус тўплам сизга БЕПУЛ юборилади.\n\n"
+        "📦 Тўплам таркиби:\n"
+        "🔹 XJ блокнот\n"
+        "🔹 XJ ҳафталик кундалик\n"
+        "🔹 XJ ручка\n"
+        "🔹 XJ маркетинг ва маҳсулотлар каталоги\n\n"
+        "Давом этиш учун қуйидаги тугмани босинг.",
+        reply_markup=confirm_kb
+    )
+
+    await state.set_state(Registration.phone)
+
+
+@dp.message(Registration.phone, F.text == "ТУШУНАРЛИ ✅")
+async def ask_phone(message: Message, state: FSMContext):
+    await message.answer(
+        "📞 Жўнатмани расмийлаштириш учун телефон рақамингизни киритинг.\n\n"
+        "📝 Намуна: +998901234567",
         reply_markup=ReplyKeyboardRemove()
     )
-    await state.set_state(Register.phone)
 
 
-@dp.message(Register.phone)
+@dp.message(Registration.phone)
 async def get_phone(message: Message, state: FSMContext):
     phone = message.text.strip()
 
     if len(phone) < 9:
-        await message.answer("Телефон рақам нотўғри.\n\nНамуна: +998901234567")
+        await message.answer(
+            "⚠️ Телефон рақам нотўғри киритилди.\n\n"
+            "📝 Намуна: +998901234567"
+        )
         return
 
     await state.update_data(phone=phone)
 
     await message.answer(
-        "Совғани етказиб бериш учун тўлиқ манзилингизни киритинг.\n\n"
-        "Вилоят, туман ёки шаҳар, маҳалла ва мўлжални ёзинг."
+        "📍 Жўнатма етказилиши учун тўлиқ манзилингизни ёзинг.\n\n"
+        "📝 Намуна: Тошкент шаҳри, Чилонзор тумани, 10-мавзе, 25-уй"
     )
-    await state.set_state(Register.address)
+
+    await state.set_state(Registration.address)
 
 
-@dp.message(Register.address)
+@dp.message(Registration.address)
 async def get_address(message: Message, state: FSMContext):
     address = message.text.strip()
 
-    if len(address) < 5:
-        await message.answer("Илтимос, манзилни тўлиқроқ ёзинг.")
+    if len(address) < 10:
+        await message.answer(
+            "⚠️ Манзил жуда қисқа киритилди.\n\n"
+            "Илтимос, тўлиқ манзилингизни ёзинг."
+        )
+        return
+
+    tg_id = message.from_user.id
+
+    if check_user(tg_id):
+        await message.answer(
+            "⚠️ Сиз ушбу акцияда олдин иштирок этгансиз.\n\n"
+            "1 та Telegram аккаунт фақат 1 марта иштирок этиши мумкин."
+        )
+        await state.clear()
+        return
+
+    if left_gifts() <= 0:
+        await message.answer(
+            "⛔ Афсуски, ҳозирча бепул совға тўпламлари тугади."
+        )
+        await state.clear()
         return
 
     data = await state.get_data()
+    gift_number = get_count() + 1
 
-    username = message.from_user.username
-    telegram_name = message.from_user.full_name
-
-    gift_number = await save_user(
-        telegram_id=message.from_user.id,
-        username=username,
-        telegram_name=telegram_name,
+    add_user(
+        tg_id=tg_id,
         full_name=data["full_name"],
         xj_id=data["xj_id"],
         qualification=data["qualification"],
         phone=data["phone"],
-        address=address
+        address=address,
+        gift_number=gift_number
     )
 
-    if gift_number is None:
-        await message.answer("❌ Ҳозирча бепул совға тўпламлари қолмади.")
-        await state.clear()
-        return
+    username = message.from_user.username
+    telegram_name = message.from_user.full_name
 
-    await message.answer(
-        f"🎉 Табриклаймиз!\n\n"
-        f"Сиз ХЖ компаниясининг бепул совға тўплами учун муваффақиятли рўйхатдан ўтдингиз.\n\n"
-        f"📦 Совға рақамингиз: №{gift_number}\n\n"
-        f"Сизга ишларингизда улкан зафарлар ва юқори натижалар тилаймиз!",
-        reply_markup=ReplyKeyboardRemove()
+    admin_text = (
+        "🎁 Янги XJ совға аризаси\n\n"
+        f"📌 Совға рақами: {gift_number}\n\n"
+        f"👤 Исм фамилия: {data['full_name']}\n"
+        f"🆔 XJ ID: {data['xj_id']}\n"
+        f"⭐ Квалификация: {data['qualification']}\n"
+        f"📞 Телефон: {data['phone']}\n"
+        f"📍 Манзил: {address}\n\n"
+        "Telegram маълумотлари:\n"
+        f"🆔 Telegram ID: {tg_id}\n"
+        f"👤 Username: @{username if username else 'username йўқ'}\n"
+        f"📛 Telegram исми: {telegram_name}\n\n"
+        f"📊 Қолган совғалар: {left_gifts()} та"
     )
-
-    username_text = f"@{username}" if username else "Йўқ"
-
-    admin_text = f"""
-📥 ЯНГИ РЎЙХАТДАН ЎТГАН ҲАМКОР
-
-🎁 Совға рақами: №{gift_number}
-
-👤 Исм-фамилия: {data["full_name"]}
-🆔 ID рақами: {data["xj_id"]}
-🏅 Квалификация: {data["qualification"]}
-📞 Телефон: {data["phone"]}
-📍 Манзил: {address}
-
-🆔 Telegram ID: {message.from_user.id}
-📱 Username: {username_text}
-👤 Telegram исми: {telegram_name}
-"""
 
     await bot.send_message(ADMIN_ID, admin_text)
+
+    await message.answer(
+        "✅ Аризангиз муваффақиятли қабул қилинди!\n\n"
+        f"🎁 Сизнинг совға рақамингиз: {gift_number}\n\n"
+        "XJ жамоаси сизга бизнесингизда ўсиш, тизимли ишлаш "
+        "ва юқори натижалар тилайди.\n\n"
+        "Тез орада масъул ходимлар сиз билан боғланади."
+    )
+
     await state.clear()
+
+
+@dp.message(Command("setlimit"))
+async def admin_set_limit(message: Message):
+    if message.from_user.id != ADMIN_ID:
+        return
+
+    try:
+        limit = int(message.text.split()[1])
+    except:
+        await message.answer("⚠️ Намуна: /setlimit 50")
+        return
+
+    set_limit(limit)
+
+    await message.answer(
+        f"✅ Совға лимити {limit} та қилиб белгиланди.\n\n"
+        f"📊 Олинган: {get_count()} та\n"
+        f"🎁 Қолган: {left_gifts()} та"
+    )
+
+
+@dp.message(Command("addgifts"))
+async def admin_add_gifts(message: Message):
+    if message.from_user.id != ADMIN_ID:
+        return
+
+    try:
+        count = int(message.text.split()[1])
+    except:
+        await message.answer("⚠️ Намуна: /addgifts 20")
+        return
+
+    add_limit(count)
+
+    await message.answer(
+        f"✅ {count} та совға қўшилди.\n\n"
+        f"📦 Жами лимит: {get_limit()} та\n"
+        f"📊 Олинган: {get_count()} та\n"
+        f"🎁 Қолган: {left_gifts()} та"
+    )
 
 
 @dp.message(Command("stats"))
@@ -285,66 +294,16 @@ async def admin_stats(message: Message):
     if message.from_user.id != ADMIN_ID:
         return
 
-    total, distributed, left = await get_stats()
-
     await message.answer(
-        f"📊 СТАТИСТИКА\n\n"
-        f"🎁 Жами совға тўпламлари: {total} та\n"
-        f"✅ Тарқатилган: {distributed} та\n"
-        f"📦 Қолган: {left} та"
-    )
-
-
-@dp.message(Command("add"))
-async def admin_add_gifts(message: Message):
-    if message.from_user.id != ADMIN_ID:
-        return
-
-    parts = message.text.split()
-
-    if len(parts) != 2 or not parts[1].isdigit():
-        await message.answer("Намуна:\n/add 20")
-        return
-
-    count = int(parts[1])
-    await add_gifts(count)
-
-    total, distributed, left = await get_stats()
-
-    await message.answer(
-        f"✅ {count} та совға тўплами қўшилди.\n\n"
-        f"🎁 Жами: {total} та\n"
-        f"✅ Тарқатилган: {distributed} та\n"
-        f"📦 Қолган: {left} та"
-    )
-
-
-@dp.message(Command("setgifts"))
-async def admin_set_gifts(message: Message):
-    if message.from_user.id != ADMIN_ID:
-        return
-
-    parts = message.text.split()
-
-    if len(parts) != 2 or not parts[1].isdigit():
-        await message.answer("Намуна:\n/setgifts 50")
-        return
-
-    count = int(parts[1])
-    await set_gifts(count)
-
-    total, distributed, left = await get_stats()
-
-    await message.answer(
-        f"✅ Совға лимити ўзгартирилди.\n\n"
-        f"🎁 Жами: {total} та\n"
-        f"✅ Тарқатилган: {distributed} та\n"
-        f"📦 Қолган: {left} та"
+        "📊 XJ совға тўплами статистикаси\n\n"
+        f"📦 Жами лимит: {get_limit()} та\n"
+        f"✅ Олинган: {get_count()} та\n"
+        f"🎁 Қолган: {left_gifts()} та"
     )
 
 
 async def main():
-    await create_tables()
+    print("Бот ишга тушди...")
     await dp.start_polling(bot)
 
 
